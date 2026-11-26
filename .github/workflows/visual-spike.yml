@@ -3,7 +3,10 @@ name: Visual Spike
 on:
   push:
     branches:
-      - "**"
+      - main
+  pull_request:
+    branches:
+      - main
 
 permissions:
   actions: read
@@ -13,6 +16,10 @@ jobs:
   visual:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
@@ -37,17 +44,43 @@ jobs:
           fi
 
       - name: Compare
-        if: github.ref_name != 'main' && steps.baseline.outputs.found == 'true'
+        id: compare
+        if: github.event_name == 'pull_request' && steps.baseline.outputs.found == 'true'
+        continue-on-error: true
         working-directory: packages/react
-        run: pnpm exec vitest run -c vitest.visual.config.ts
+        run: pnpm exec vitest run -c vitest.visual.config.ts --reporter=default --reporter=json --outputFile.json=visual-report.json
+
+      - name: Report
+        if: steps.compare.outcome != 'skipped'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          test -f packages/react/visual-report.json
+          .github/scripts/visual-report.sh packages/react/visual-report.json "$RUN_URL" | tee visual-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment
+        if: steps.compare.outcome != 'skipped' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          marker='<!-- visual-spike -->'
+          body="$marker"$'\n'"$(cat visual-report.md)"
+          comments="repos/$GITHUB_REPOSITORY/issues"
+          id=$(gh api "$comments/$PR/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "$comments/comments/$id" -f body="$body" --silent
+          elif ! grep -q '^No visual changes' visual-report.md; then
+            gh api -X POST "$comments/$PR/comments" -f body="$body" --silent
+          fi
 
       - name: Update baseline
-        if: github.ref_name == 'main' || steps.baseline.outputs.found != 'true'
+        if: github.event_name == 'push' || steps.baseline.outputs.found != 'true'
         working-directory: packages/react
         run: pnpm exec vitest run -c vitest.visual.config.ts --update
 
       - name: Upload baseline
-        if: github.ref_name == 'main'
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: visual-baseline
@@ -56,11 +89,11 @@ jobs:
           if-no-files-found: error
 
       - name: Upload diff
-        if: failure()
+        if: steps.compare.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: visual-diff
           path: packages/react/.vitest/attachments
-          include-hidden-files: true
           retention-days: 7
+          include-hidden-files: true
           if-no-files-found: ignore
