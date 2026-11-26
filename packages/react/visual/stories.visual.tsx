@@ -27,6 +27,11 @@ for (const [path, module] of Object.entries(modules)) {
           </div>
         </UIProvider>,
       )
+      await Promise.all(
+        Array.from(document.images, (image) =>
+          image.decode().catch(() => undefined),
+        ),
+      )
       await expect
         .element(page.getByTestId("story"))
         .toMatchScreenshot(`${component}-${name}`)
