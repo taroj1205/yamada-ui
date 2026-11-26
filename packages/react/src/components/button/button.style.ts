@@ -10,7 +10,7 @@ export const buttonStyle = defineComponentStyle({
     justifyContent: "center",
     overflow: "hidden",
     position: "relative",
-    rounded: "none",
+    rounded: "l2",
     transitionDuration: "moderate",
     transitionProperty: "common",
     userSelect: "none",
