@@ -21,15 +21,6 @@ on:
       - ready_for_review
     branches:
       - main
-    paths:
-      - .github/workflows/visual.yml
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - packages/react/package.json
-      - packages/react/vitest.visual.config.ts
-      - packages/react/visual/**
-      - packages/react/src/**
-      - packages/utils/src/**
 
 permissions:
   contents: read
